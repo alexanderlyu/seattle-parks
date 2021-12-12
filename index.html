@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>City of Seattle Parks by Distance</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:400,700"
+      rel="stylesheet"
+    />
+    <script src="https://api.tiles.mapbox.com/mapbox-gl-js/v2.6.1/mapbox-gl.js"></script>
+    <link
+      href="https://api.tiles.mapbox.com/mapbox-gl-js/v2.6.1/mapbox-gl.css"
+      rel="stylesheet"
+    />
+    <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v4.7.0/mapbox-gl-geocoder.min.js"></script>
+    <link
+      rel="stylesheet"
+      href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v4.7.0/mapbox-gl-geocoder.css"
+      type="text/css"
+    />
+    <script src="https://npmcdn.com/@turf/turf/turf.min.js"></script>
+    <link rel="stylesheet" href="css/styles.css">
+
+  </head>
+  <body>
+    <div class="sidebar">
+      <div class="heading">
+        <h1>City of Seattle Park Locations</h1>
+      </div>
+      <div id="listings" class="listings"></div>
+    </div>
+    <div id="map" class="map"></div>
+    <script>
+        mapboxgl.accessToken = 'pk.eyJ1IjoiYWxleGFuZGVybHl1IiwiYSI6ImNrdmJxZG94cjlmc24yd3Q5ZnN4Y2xpMWwifQ.0TY9sk56O0U6oqem0XZ86w';
+
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/alexanderlyu/ckx32y79l4r8z15um07gpnk3e',
+            center: [-122.3321, 47.6062],
+            zoom: 11,
+        });
+        map.addControl(new mapboxgl.NavigationControl());
+
+        async function geojsonFetch() { 
+            let response = await fetch('assets/Park_points.geojson');
+            let parks = await response.json();
+
+            parks.features.forEach((park, i) => {
+                park.properties.id = i;
+            });
+            
+
+            map.on('load', () => {
+
+                map.addSource('Park_points', {
+                    'type': 'geojson',
+                    'data': parks
+                });
+                
+
+                const geocoder = new MapboxGeocoder({
+                    accessToken: mapboxgl.accessToken,
+                    mapboxgl: mapboxgl,
+                    marker: true,
+                    bbox: [-122.76672363281249, 46.694667307773116, -120.267333984375, 47.908978314728714]
+                });           
+
+                buildLocationList(parks);
+                map.addControl(geocoder, 'top-left');
+                addMarkers();
+                
+                geocoder.on('result', (event) => {
+                    const searchResult = event.result.geometry;
+                    
+
+                    const options = { units: 'miles' };
+                    for (const park of parks.features) {
+                        park.properties.distance = turf.distance(
+                            searchResult,
+                            park.geometry,
+                            options
+                        );
+
+                        park.properties.rounded = Math.round(park.properties.distance * 100) / 100;
+                    }
+                    
+
+                    parks.features.sort((a, b) => {
+                        if (a.properties.distance > b.properties.distance) {
+                        return 1;
+                        }
+                        if (a.properties.distance < b.properties.distance) {
+                        return -1;
+                        }
+                        return 0;
+                    });
+                    
+
+                    const listings = document.getElementById('listings');
+                    while (listings.firstChild) {
+                        listings.removeChild(listings.firstChild);
+                    }
+                    buildLocationList(parks);
+                    
+                    createPopUp(parks.features[0]);
+                    
+                    const activeListing = document.getElementById(
+                        `listing-${parks.features[0].properties.id}`
+                    );
+                    activeListing.classList.add('active');
+                    
+                    const bbox = getBbox(parks, 0, searchResult);
+                    map.fitBounds(bbox, {
+                        padding: 100
+                    });
+                });
+            });
+            
+            function getBbox(sortedParks, parkIdentifier, searchResult) {
+                const lats = [
+                    sortedPArks.features[parkIdentifier].geometry.coordinates[1],
+                    searchResult.coordinates[1]
+                ];
+                const lons = [
+                    sortedParks.features[parkIdentifier].geometry.coordinates[0],
+                    searchResult.coordinates[0]
+                ];
+                const sortedLons = lons.sort((a, b) => {
+                    if (a > b) {
+                        return 1;
+                    }
+                    if (a.distance < b.distance) {
+                        return -1;
+                    }
+                    return 0;
+                });
+                const sortedLats = lats.sort((a, b) => {
+                    if (a > b) {
+                        return 1;
+                    }
+                    if (a.distance < b.distance) {
+                        return -1;
+                    }
+                    return 0;
+                });
+                return [
+                    [sortedLons[0], sortedLats[0]],
+                    [sortedLons[1], sortedLats[1]]
+                ];
+            }
+            
+            function addMarkers() {
+
+                for (const marker of parks.features) {
+
+                    const el = document.createElement('div');
+
+                    el.id = `marker-${marker.properties.id}`;
+
+                    el.className = 'marker';
+                    
+
+                    new mapboxgl.Marker(el, { offset: [0, -23] })
+                    .setLngLat(marker.geometry.coordinates)
+                    .addTo(map);
+                    
+                    el.addEventListener('click', (e) => {
+                        flyToPark(marker);
+                        createPopUp(marker);
+                        const activeItem = document.getElementsByClassName('active');
+                        e.stopPropagation();
+                        if (activeItem[0]) {
+                            activeItem[0].classList.remove('active');
+                        }
+                        const listing = document.getElementById(
+                        `listing-${marker.properties.id}`
+                        );
+                        listing.classList.add('active');
+                    });
+                }
+            }
+            
+
+            function buildLocationList(parks) {
+                for (const park of parks.features) {
+
+                    const listings = document.getElementById('listings');
+                    const listing = listings.appendChild(document.createElement('div'));
+
+                    listing.id = `listing-${park.properties.id}`;
+
+                    listing.className = 'item';
+                    
+                    const link = listing.appendChild(document.createElement('a'));
+                    link.href = '#';
+                    link.className = 'title';
+                    link.id = `link-${park.properties.id}`;
+                    link.innerHTML = `${park.properties.SiteName}`;
+                    
+
+                    const details = listing.appendChild(document.createElement('div'));
+                    if (park.properties.distance) {
+                        const roundedDistance =
+                            Math.round(park.properties.distance * 100) / 100;
+                        details.innerHTML += `<div><strong>${roundedDistance} miles away</strong></div>`;
+                    }
+                    
+
+                    link.addEventListener('click', function () {
+                        for (const feature of parks.features) {
+                            if (this.id === `link-${feature.properties.id}`) {
+                                flyToPark(feature);
+                                createPopUp(feature);
+                            }
+                        }
+                        const activeItem = document.getElementsByClassName('active');
+                        if (activeItem[0]) {
+                            activeItem[0].classList.remove('active');
+                        }
+                        this.parentNode.classList.add('active');
+                    });
+                }
+            }
+            
+            function flyToPark(currentFeature) {
+                map.flyTo({
+                    center: currentFeature.geometry.coordinates,
+                    zoom: 15
+                });
+            }
+
+            function createPopUp(currentFeature) {
+                const popUps = document.getElementsByClassName('mapboxgl-popup');
+                if (popUps[0]) popUps[0].remove();
+                
+                const popup = new mapboxgl.Popup({ closeOnClick: false })
+                .setLngLat(currentFeature.geometry.coordinates)
+                .setHTML(
+                `<h3>${currentFeature.properties.SiteName}</h3><h4>${currentFeature.properties.rounded} miles away</h4>`
+                )
+                .addTo(map);
+            }
+        }
+
+        geojsonFetch();
+    </script>
+  </body>
+</html>
