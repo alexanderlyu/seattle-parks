@@ -3,7 +3,7 @@
 ## Description 
 This project is a web GIS application that displays the location of parks that are owned and operated by the city of Seattle. This application does not display parks that are owned and operated by other entities within Seattle. 
 
-**Project Link:** https://alexanderlyu.github.io/seattle_parks/index.html
+**Project Link:** https://alexanderlyu.github.io/seattle-parks/
 ![image of application](img/map.png)
 
 ## Project Goal 
